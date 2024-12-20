@@ -1,8 +1,8 @@
-const ConvertLib = artifacts.require("ConvertLib");
-const MetaCoin = artifacts.require("MetaCoin");
+const TokenFactory = artifacts.require("TokenFactory");
 
-module.exports = function(deployer) {
-  deployer.deploy(ConvertLib);
-  deployer.link(ConvertLib, MetaCoin);
-  deployer.deploy(MetaCoin);
+module.exports = async function (deployer, network, accounts) {
+  const adminAddresses = [accounts[1], accounts[2], accounts[3], accounts[4]];
+  const approvalThreshold = 2;
+
+  await deployer.deploy(TokenFactory, adminAddresses, approvalThreshold, { from: accounts[0] });
 };
