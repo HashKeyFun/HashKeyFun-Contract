@@ -1,3 +1,8 @@
+require('dotenv').config();
+const HDWalletProvider = require('@truffle/hdwallet-provider');
+
+const privateKey = process.env.PRIVATE_KEY;
+
 module.exports = {
   networks: {
     development: {
@@ -5,6 +10,16 @@ module.exports = {
       port: 7545,
       network_id: "*", // Match any network id
       gas: 5000000
+    },
+    testnet: {
+      provider: () =>
+          new HDWalletProvider(
+              privateKey,
+              'https://hashkeychain-testnet.alt.technology'
+          ),
+      network_id: 133,
+      gas: 5000000,
+      gasPrice: 1000000000 // 1 Gwei
     }
   },
   compilers: {
