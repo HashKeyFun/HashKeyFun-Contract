@@ -32,5 +32,8 @@ module.exports = {
         },
       }
     }
-  }
+  },
+  plugins: [
+    'truffle-plugin-stdjsonin'
+  ]
 };
