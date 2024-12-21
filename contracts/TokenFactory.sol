@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./LinearBondingCurveToken.sol";
 
 contract TokenFactory is Ownable {
     struct TokenRequest {
@@ -92,23 +92,36 @@ contract TokenFactory is Ownable {
         emit TokenRejected(requestId);
     }
 
-    function issueToken(bytes32 requestId) external {
+    function issueToken(bytes32 requestId) external payable {
         require(tokenRequests[requestId].exists, "Request does not exist");
-        require(tokenRequests[requestId].approved, "Not approved by threshold");
-        require(msg.sender == tokenRequests[requestId].creator, "Only the creator can issue the token");
-
-        uint256 totalSupply = 8888888888;
-        uint8 decimals = 18;
-
-        Token newToken = new Token(
-            tokenRequests[requestId].name,
-            tokenRequests[requestId].symbol,
-            decimals,
-            totalSupply,
-            tokenRequests[requestId].creator
+        require(tokenRequests[requestId].approved, "Not approved yet");
+        require(
+            msg.sender == tokenRequests[requestId].creator,
+            "Only creator can issue"
         );
 
+        // 1. 새 본딩 커브 토큰 배포 (초기 공급량 0)
+        LinearBondingCurveToken newToken = new LinearBondingCurveToken(
+            tokenRequests[requestId].name,
+            tokenRequests[requestId].symbol,
+            owner() // factory 소유자 주소
+        );
+
+        // 2. Creator가 보낸 HSK가 있다면 => 새로 배포한 토큰에 buyTokensFor(creator) 실행
+        if (msg.value > 0) {
+            // newToken.buyTokensFor{value: msg.value}(msg.sender);
+            // ↑ 이렇게 직접 호출해도 되지만,
+            //   혹여나 컨트랙트 코드가 msg.sender == tx.origin 등 체크를 한다면
+            //   이 로직 안에서 msg.sender는 factory이므로 문제가 될 수 있음.
+            //   다만 여기서는 상관없으므로 그대로 호출 가능.
+
+            newToken.buyTokensFor{value: msg.value}(msg.sender);
+        }
+
+        // 3. 요청 정보 삭제
         delete tokenRequests[requestId];
+
+        // 4. 이벤트
         emit TokenIssued(requestId, address(newToken));
     }
 
