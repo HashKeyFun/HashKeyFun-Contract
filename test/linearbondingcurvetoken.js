@@ -13,6 +13,19 @@ contract("LinearBondingCurveToken (fixed basePrice & slope)", (accounts) => {
 
     let token;
 
+    async function getGasCost(txInfo) {
+        // txInfo.tx => 트랜잭션 해시
+        // txInfo.receipt => { gasUsed, ... }
+        const txHash = txInfo.tx;
+        const gasUsed = new BN(txInfo.receipt.gasUsed);
+
+        // web3.eth.getTransaction(txHash) => { gasPrice, ... }
+        const tx = await web3.eth.getTransaction(txHash);
+        const gasPrice = new BN(tx.gasPrice);
+
+        return gasUsed.mul(gasPrice); // = 가스비 총합(wei)
+    }
+
     beforeEach(async () => {
         // 컨트랙트 배포
         token = await LinearBondingCurveToken.new(
@@ -81,6 +94,65 @@ contract("LinearBondingCurveToken (fixed basePrice & slope)", (accounts) => {
 
         assert(beneficiaryBalance.gt(new BN("0")), "Beneficiary balance should be > 0");
         assert(totalSupply.eq(beneficiaryBalance), "Total supply should match beneficiary balance if it's the first purchase");
+    });
+
+    it("buy & sell with gas cost calculation", async () => {
+        // 1) 사용자(user)의 초기 ETH 잔액
+        const userInitialEth = new BN(await web3.eth.getBalance(user));
+
+        // 2) 1 ETH로 buyTokens
+        const buyValue = ether("1");
+        const buyTx = await token.buyTokens({ from: user, value: buyValue });
+        const buyGasCost = await getGasCost(buyTx);
+
+        // 3) 구매 후 user's ETH 잔액
+        const userEthAfterBuy = new BN(await web3.eth.getBalance(user));
+        // 기대되는 잔액 = 초기 - 구매액(1 ETH) - 가스비
+        const expectedEthAfterBuy = userInitialEth.sub(buyValue).sub(buyGasCost);
+
+        // 오차 없이 정확히 일치해야 함
+        assert.equal(
+            userEthAfterBuy.toString(),
+            expectedEthAfterBuy.toString(),
+            "User's ETH balance after buy is incorrect (gas cost not accounted)"
+        );
+
+        // 4) 구매한 토큰 수 확인
+        const userTokenBalance = await token.balanceOf(user);
+        assert(userTokenBalance.gt(new BN("0")), "User did not receive tokens");
+
+        // 5) 절반만 매도
+        const tokensToSell = userTokenBalance.div(new BN("2"));
+        const userEthBeforeSell = new BN(await web3.eth.getBalance(user));
+
+        // (참고) 현재 totalSupply() = userTokenBalance (첫 구매자가 전량 보유)
+        //       sell 시에는 totalSupply() 기준 가격을 다시 계산
+        const totalSupplyBeforeSell = await token.totalSupply();
+        const pricePerToken = await token.getPrice(totalSupplyBeforeSell);
+        // 매도 수익 (단순 = tokenAmount * pricePerToken / 1e18)
+        const expectedRevenue = tokensToSell.mul(pricePerToken).div(new BN("1000000000000000000"));
+
+        // 매도 트랜잭션
+        const sellTx = await token.sellTokens(tokensToSell, { from: user });
+        const sellGasCost = await getGasCost(sellTx);
+
+        // 6) 매도 후 user's ETH 잔액
+        const userEthAfterSell = new BN(await web3.eth.getBalance(user));
+        // 기대되는 잔액 = 매도 전 잔액 + 매도수익 - 가스비
+        const expectedEthAfterSell = userEthBeforeSell.add(expectedRevenue).sub(sellGasCost);
+
+        assert.equal(
+            userEthAfterSell.toString(),
+            expectedEthAfterSell.toString(),
+            "User's ETH balance after sell is incorrect (gas cost / revenue mismatch)"
+        );
+
+        // 7) 남은 토큰 잔액은 전체의 절반
+        const userTokenBalanceFinal = await token.balanceOf(user);
+        assert(
+            userTokenBalanceFinal.eq(userTokenBalance.sub(tokensToSell)),
+            "Final token balance mismatch after sell"
+        );
     });
 
     it("should revert if 0 HSK sent", async () => {

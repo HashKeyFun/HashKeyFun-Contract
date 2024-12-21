@@ -78,4 +78,31 @@ contract LinearBondingCurveToken is ERC20 {
         // (옵션) 수수료 처리
         // payable(factoryOwner).transfer(msg.value);
     }
+
+    function sellTokens(uint256 tokenAmount) external {
+        require(tokenAmount > 0, "Cannot sell 0 tokens");
+        // 사용자가 충분한 토큰을 보유 중인지 확인
+        require(balanceOf(msg.sender) >= tokenAmount, "Not enough tokens to sell");
+
+        uint256 currentSupply = totalSupply();
+        // 현재 공급량보다 더 많은 토큰을 소각할 수 없음
+        require(currentSupply >= tokenAmount, "Exceeds total supply");
+
+        // 단순히 '현재 supply' 기준으로 1개당 가격을 구함
+        // (buyTokens와 같은 접근, 적분 미사용)
+        uint256 pricePerToken = getPrice(currentSupply);
+
+        // 실제 매도 시 받을 수 있는 HSK(wei)
+        // tokensToSell * pricePerToken / 1e18 (토큰은 18자리 소수점)
+        uint256 revenue = (tokenAmount * pricePerToken) / 1e18;
+
+        // 컨트랙트 내에 충분한 잔액이 있어야 함
+        require(address(this).balance >= revenue, "Not enough liquidity in contract");
+
+        // 토큰 소각(유저 보유분 감소)
+        _burn(msg.sender, tokenAmount);
+
+        // HSK(ETH) 전송
+        payable(msg.sender).transfer(revenue);
+    }
 }
